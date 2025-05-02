@@ -1,3 +1,11 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Thu May  1 20:33:42 2025
+
+@author: ghass
+"""
+
+
 import gym, random, matplotlib.pyplot as plt
 import numpy as np, torch
 import torch.nn as nn
@@ -20,6 +28,8 @@ class ReplayBuffer:
         return list(map(np.array, zip(*batch)))
     def __len__(self):
         return len(self.buffer)
+
+
 
 # ────────────────────────────────
 # 1. FrozenLake 15×15 non-absorbing
@@ -87,6 +97,7 @@ def generate_custom_map(size=15, holes=10):
             h += 1
     return np.array([[x.encode() for x in row] for row in desc])
 
+
 def perturb_map(desc, shift=1, p=0.4):
     noisy = desc.copy()
     sz = desc.shape[0]
@@ -97,8 +108,6 @@ def perturb_map(desc, shift=1, p=0.4):
             if noisy[r2, c2] == b'F':
                 noisy[r, c], noisy[r2, c2] = b'F', b'H'
     return noisy
-
-
 
 
 
@@ -143,10 +152,10 @@ def shaped_reward(ns, env):
     
     tile = env.orig_desc[r,c]
     if tile == b'H':
+        MAX_DIST = (env.nrow-1)+(env.ncol-1)
         d = manhattan((r,c), env._goal)
-        prop = env._tot / d  
-        return -PENALTY_C * prop
-    return 1.0 if tile == b'G' else 0.1
+        return -PENALTY_C * (d / MAX_DIST)
+    return 1.0 if tile == b'G' else 0.5
 
 # ────────────────────────────────
 # 4. Hyper-params
@@ -156,7 +165,7 @@ MAX_STEPS         = 150
 BATCH_SIZE        = 64
 GAMMA             = 0.99
 HORIZON           = 10
-PENALTY_C         = 15.0
+PENALTY_C         = 3.0
 COST_LIMIT        = 3.0
 LR_CRITIC         = LR_POLICY = LR_ALPHA = 3e-4
 TAU               = 0.005
@@ -167,9 +176,7 @@ N_POLICY_UPDATES  = 10
 # 5. Env init
 # ────────────────────────────────
 true_map  = generate_custom_map()
-noisy_map = perturb_map(true_map)
 train_env = NonAbsorbingHoleFrozenLake(desc=true_map, is_slippery=True)
-test_env  = NonAbsorbingHoleFrozenLake(desc=noisy_map, is_slippery=True)
 S_DIM, A_DIM = train_env.nS, train_env.nA
 
 # ────────────────────────────────
@@ -469,4 +476,146 @@ plt.show()
 plt.figure(); plt.plot(eps, R_hist); plt.title('Reward vs Episode')
 plt.figure(); plt.plot(eps, C_hist); plt.axhline(COST_LIMIT, ls='--'); plt.title('Cost vs Episode')
 plt.figure(); plt.plot(eps, L_hist); plt.title('Lambda vs Episode')
+plt.show()
+
+
+
+# ─────────────────────────────────────────────
+# FINAL EVALUATION on the noisy map (test_env)
+# ─────────────────────────────────────────────
+# ────────────────────────────────
+# 10. Test dynamique avec perturbations
+# ────────────────────────────────
+class DynamicHoleWrapper(gym.Wrapper):
+    def __init__(self, base_env, true_map, perturb_prob=0.3, shift=1):
+        super().__init__(base_env)
+        self.true_map = true_map
+        self.perturb_prob = perturb_prob
+        self.shift = shift
+        self.current_desc = true_map.copy()
+
+    def _perturb_step(self):
+        """Applique une perturbation aléatoire à chaque étape avec probabilité"""
+        if np.random.rand() < self.perturb_prob:
+            self.current_desc = perturb_map(self.current_desc, shift=self.shift, p=0.2)
+            self.update_env_map()
+
+    def update_env_map(self):
+        """Met à jour la carte de l'environnement"""
+        self.env.desc = self.current_desc.copy()
+        self.env._fix_hole_transitions()
+
+    def reset(self):
+        self.current_desc = self.true_map.copy()
+        self.update_env_map()
+        return super().reset()
+
+    def step(self, action):
+        self._perturb_step()
+        return super().step(action)
+
+#environnement de test perturbé (c'est à dire position avec probabilité d'erreur de présence dans une position)
+test_env = DynamicHoleWrapper(
+    NonAbsorbingHoleFrozenLake(desc=true_map, is_slippery=True),
+    true_map=true_map,
+    perturb_prob=0.2,
+    shift=1
+)
+S_DIM, A_DIM = train_env.nS, train_env.nA
+eps, R_hist, C_hist, L_hist = [], [], [], []
+test_metrics = {'eps': [], 'reward': [], 'cost': [], 'success': [], 'lambda': []}
+
+#evaluation politique pour l'utiliser à chaque itération
+def evaluate_policy(env, policy, num_episodes=300, max_steps=MAX_STEPS):
+    success_rate = 0
+    total_cost = 0
+    total_reward = 0
+
+    test_R_hist, test_C_hist, test_S_hist, test_L_hist = [], [], [], []
+    for _ in range(num_episodes):
+        s = env.reset()
+        ep_reward = 0
+        ep_cost = 0
+        done = False
+        steps = 0
+
+
+        while not done and steps < max_steps:
+            with torch.no_grad():
+                logits = policy(to_tensor(one_hot(s, S_DIM)).unsqueeze(0))
+                a = F.softmax(logits, 1).multinomial(1).item()
+
+            ns, r, done, _ = env.step(a)
+            shaped = shaped_reward(ns, env)
+
+            ep_reward += shaped
+            ep_cost += max(0.0, -shaped)
+            s = ns
+            steps += 1
+
+            if env.orig_desc.flatten()[s] == b'G':
+                success_rate += 1
+                break
+
+    avg_reward = total_reward / num_episodes
+    avg_cost = total_cost / num_episodes
+    success_rate = success_rate / num_episodes * 100
+
+    return avg_reward, avg_cost, success_rate
+
+for ep in range(1, NUM_EP+1):
+
+
+    # Évaluation périodique
+    if ep % 10 == 0:
+        test_reward, test_cost, test_success = evaluate_policy(test_env, policy,num_episodes=500)
+
+        # Enregistrement des métriques
+        test_metrics['eps'].append(ep)
+        test_metrics['reward'].append(test_reward)
+        test_metrics['cost'].append(test_cost)
+        test_metrics['success'].append(test_success)
+        test_metrics['lambda'].append(lambda_var.item())
+
+        print(f"Ep{ep}: Test R={test_reward:.1f}, C={test_cost:.2f}, Success={test_success:.1f}%")
+
+# ────────────────────────────────
+# 9. Visualisation (version corrigée)
+# ────────────────────────────────
+plt.figure(figsize=(14, 10))
+
+# Reward
+plt.subplot(221)
+plt.plot(eps, R_hist, label='Train')
+plt.plot(test_metrics['eps'], test_metrics['reward'], 'o-', color='orange', label='Test')
+plt.title('Reward Comparison')
+plt.ylabel('Average Reward')
+plt.legend()
+
+# Cost
+plt.subplot(222)
+plt.plot(eps, C_hist, label='Train')
+plt.plot(test_metrics['eps'], test_metrics['cost'], 'o-', color='orange', label='Test')
+plt.axhline(COST_LIMIT, color='r', linestyle='--', label='Cost Limit')
+plt.title('Cost Comparison')
+plt.ylabel('Average Cost')
+plt.legend()
+
+# Lambda
+plt.subplot(223)
+plt.plot(eps, L_hist, label='Train Lambda')
+plt.plot(test_metrics['eps'], test_metrics['lambda'], 'o-', color='green', label='Test Lambda')
+plt.title('Lambda Value Evolution')
+plt.ylabel('Lambda Value')
+plt.legend()
+
+# Success Rate
+plt.subplot(224)
+plt.plot(test_metrics['eps'], test_metrics['success'], 's-', color='purple')
+plt.ylim(0, 100)
+plt.title('Test Environment Success Rate')
+plt.ylabel('Success Rate (%)')
+plt.xlabel('Episodes')
+
+plt.tight_layout()
 plt.show()

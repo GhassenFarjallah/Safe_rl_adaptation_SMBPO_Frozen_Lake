@@ -160,7 +160,7 @@ def shaped_reward(ns, env):
 # ────────────────────────────────
 # 4. Hyper-params
 # ────────────────────────────────
-NUM_EP            = 300
+NUM_EP            = 10
 MAX_STEPS         = 150
 BATCH_SIZE        = 64
 GAMMA             = 0.99
@@ -526,14 +526,14 @@ eps, R_hist, C_hist, L_hist = [], [], [], []
 test_metrics = {'eps': [], 'reward': [], 'cost': [], 'success': [], 'lambda': []}
 
 #evaluation politique pour l'utiliser à chaque itération
-def evaluate_policy(env, policy, num_episodes=300, max_steps=MAX_STEPS):
+def evaluate_policy(env, policy, num_episodes=10, max_steps=MAX_STEPS):
     success_rate = 0
     total_cost = 0
     total_reward = 0
 
     test_R_hist, test_C_hist, test_S_hist, test_L_hist = [], [], [], []
     for _ in range(num_episodes):
-        s = env.reset()
+        s, _ = env.reset() 
         ep_reward = 0
         ep_cost = 0
         done = False
@@ -568,7 +568,7 @@ for ep in range(1, NUM_EP+1):
 
     # Évaluation périodique
     if ep % 10 == 0:
-        test_reward, test_cost, test_success = evaluate_policy(test_env, policy,num_episodes=500)
+        test_reward, test_cost, test_success = evaluate_policy(test_env, policy,num_episodes=10)
 
         # Enregistrement des métriques
         test_metrics['eps'].append(ep)

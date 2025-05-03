@@ -23,5 +23,12 @@ On a utilisé le code existant de SMBPO (https://github.com/gwthomas/Safe-MBPO) 
 •	Hyperparamètres et boucle MBPO (MODEL_ITERS, BATCH, ENSEMBLE_SIZE) calqués du dépôt.
 •	Classes utilitaires : `Buffer` (add/sample), fonctions `set_seed`, `one_hot`, `to_tensor`.
 
+#Exécution du code :
+*SMBPO_with_cost_obstacles.py : vous pouvez exécuter en local sur Spyder ou Jupyter Notebook le code de SMBPO modifié avec le cout relatif qui contient les 2 parties simulation (train) et réalité (test).
+
+*MBPO_On_FrozenLake_Env.py : vous pouvez exécuter le code de la méthode non sécuritaire MBPO avec les environnement train et test et les visualisations
+
+
+
 
 

@@ -3,7 +3,7 @@
 ### 📺 Démonstration Vidéo
 Voici une visualisation de l'exécution de l'algorithme sur l'environnement Frozen Lake :
 
-<video src="https://github.com/GhassenFarjallah/Safe_rl_adaptation_SMBPO_Frozen_Lake/blob/main/video_Adaptation_SMBPO.mp4" width="100%" controls poster="https://placeholder.com..."></video>
+<video src="https://github.com/GhassenFarjallah/Safe_rl_adaptation_SMBPO_Frozen_Lake/blob/main/video_Adaptation_SMBPO.mp4""></video>
 
 ---
 
